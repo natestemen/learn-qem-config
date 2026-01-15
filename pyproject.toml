@@ -10,5 +10,6 @@ dependencies = [
     "qiskit-aer",
     "jsonschema",
     "numpy",
-    "ply"
+    "ply",
+    "ipykernel>=7.1.0",
 ]
