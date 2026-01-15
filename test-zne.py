@@ -9,9 +9,10 @@ from mitiq.zne.scaling.identity_insertion import insert_id_layers
 from mitiq.zne.scaling.layer_scaling import get_layer_folding
 from qiskit import QuantumCircuit, transpile
 from noise_model_backends import get_noise_backend
+from experiments import get_experiment
 
-NOISE_MODEL="readout"  #{depolarizing, amplitude_damping, phase_damping, readout}
-EXPERIMENT="ghz"            #{ghz}
+NOISE_MODEL="depolarizing"                   #{depolarizing, amplitude_damping, phase_damping, readout}
+EXPERIMENT="mirror_circuits"            #{ghz, mirror_circuits}
 
 # Load Schema:
 def load(schema_path):
@@ -125,8 +126,7 @@ def extrapolation_map(single_exp):
     }
     return ex_map[single_exp["extrapolation"]]
 
-def make_executor(backend, shots=4096):
-    print()
+def make_executor(backend, verify, shots=4096):
 
     def executor(circuit):
         qc = circuit.copy()
@@ -135,13 +135,9 @@ def make_executor(backend, shots=4096):
 
         result = backend.run(transpiled_qc, shots=shots).result()
         counts = result.get_counts(transpiled_qc)
-        #print("counts:", counts)
-        total_shots = sum(counts.values())
-        zero_state = "0" * qc.num_qubits
-        one_state = "1" * qc.num_qubits
-        expectation_value = (
-            counts.get(zero_state, 0) + counts.get(one_state, 0)
-        ) / total_shots
+        
+        # Use verify function adapted to the experiment to calculate the expectation value 
+        expectation_value = verify(counts)
 
         return expectation_value
     
@@ -170,24 +166,23 @@ def batch_execute(batch_dict, circuit, executor):
     return exp_val_list
 
 
-# Making a 3-qubit GHZ circuit directly in Qiskit:
-n = 3
-ghz_circ = QuantumCircuit(n)
-ghz_circ.h(0)
-for idx in range(n - 1):
-    ghz_circ.cx(idx, idx + 1)
+# Create the circuit and verifying function of the experiment
+circ, verify_func= get_experiment(EXPERIMENT)
 
+# Create the backend given the noise model
+backend = get_noise_backend(NOISE_MODEL)
+#backend=get_noise_backend(NOISE_MODEL, prob=0.005, param_amp=0.9, excited_state_population=0, param_phase=0.9, canonical_kraus=True)
 
-#backend = get_noise_backend(NOISE_MODEL)
-backend=get_noise_backend(NOISE_MODEL, prob=0.005, param_amp=0.9, excited_state_population=0, param_phase=0.9, canonical_kraus=True)
-exe=make_executor(backend,shots=4096)
+exe=make_executor(backend, verify_func, shots=4096)
 
+'''
 ideal_ev = 1.0
-noisy_ev=exe(ghz_circ)
+noisy_ev=exe(circ)
 print("ideal EV:", ideal_ev)
 print(f"{NOISE_MODEL} EV:", noisy_ev)
+'''
 
-exp_results = batch_execute(zne_batch_test, ghz_circ, exe)
+exp_results = batch_execute(zne_batch_test, circ, exe)
 for k in np.arange(1, 7):
     print("Experiment", k, "Mitigated Expectation Value:", exp_results[k - 1])
 
