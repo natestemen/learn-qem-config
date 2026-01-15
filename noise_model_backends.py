@@ -37,7 +37,7 @@ def _build_readout_backend(prob=0.005, **args):
 
 def _build_thermal_relaxation_backend(T1=50e3, T2=30e3, gate_time_1q=50, gate_time_2q=150, **args):
     noise_model = NoiseModel()
-    
+
     thermal_err_1q = thermal_relaxation_error(T1, T2, gate_time_1q)
     thermal_err_2q = thermal_relaxation_error(T1, T2, gate_time_2q).tensor(thermal_relaxation_error(T1, T2, gate_time_2q))
     
@@ -51,7 +51,8 @@ NOISE_BACKEND_MAP = {
     "depolarizing": _build_depolarizing_backend,
     "amplitude_damping": _build_amplitude_damping_backend,
     "phase_damping": _build_phase_damping_backend,
-    "readout": _build_readout_backend
+    "readout": _build_readout_backend,
+    "thermal": _build_thermal_relaxation_backend
 }
 
 def get_noise_backend(noise_model_name, **args):
