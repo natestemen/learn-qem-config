@@ -8,9 +8,10 @@ from mitiq.zne.scaling.folding import fold_all, fold_gates_at_random, fold_globa
 from mitiq.zne.scaling.identity_insertion import insert_id_layers
 from mitiq.zne.scaling.layer_scaling import get_layer_folding
 from qiskit import QuantumCircuit, transpile
-from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel, depolarizing_error
-from noise_model_backends import build_amplitude_damping_backend, build_phase_damping_backend, build_depolarizing_backend
+from noise_model_backends import get_noise_backend
+
+NOISE_MODEL="readout"  #{depolarizing, amplitude_damping, phase_damping, readout}
+EXPERIMENT="ghz"            #{ghz}
 
 # Load Schema:
 def load(schema_path):
@@ -124,22 +125,27 @@ def extrapolation_map(single_exp):
     }
     return ex_map[single_exp["extrapolation"]]
 
-def executor(circuit, backend, shots=4096):
-    qc = circuit.copy()
-    qc.measure_all()
-    transpiled_qc = transpile(qc, backend=backend, optimization_level=0)
+def make_executor(backend, shots=4096):
+    print()
 
-    result = backend.run(transpiled_qc, shots=shots).result()
-    counts = result.get_counts(transpiled_qc)
-    print("counts:", counts)
-    total_shots = sum(counts.values())
-    zero_state = "0" * qc.num_qubits
-    one_state = "1" * qc.num_qubits
-    expectation_value = (
-        counts.get(zero_state, 0) + counts.get(one_state, 0)
-    ) / total_shots
+    def executor(circuit):
+        qc = circuit.copy()
+        qc.measure_all()
+        transpiled_qc = transpile(qc, backend=backend, optimization_level=0)
 
-    return expectation_value
+        result = backend.run(transpiled_qc, shots=shots).result()
+        counts = result.get_counts(transpiled_qc)
+        #print("counts:", counts)
+        total_shots = sum(counts.values())
+        zero_state = "0" * qc.num_qubits
+        one_state = "1" * qc.num_qubits
+        expectation_value = (
+            counts.get(zero_state, 0) + counts.get(one_state, 0)
+        ) / total_shots
+
+        return expectation_value
+    
+    return executor
 
 def batch_execute(batch_dict, circuit, executor):
     # Define list of experiments
@@ -172,17 +178,17 @@ for idx in range(n - 1):
     ghz_circ.cx(idx, idx + 1)
 
 
-prob = 0.005
-amplitude_backend = build_amplitude_damping_backend(param_amp=0.9, excited_state_population=0, canonical_kraus=True)
-phase_backend = build_phase_damping_backend(param_phase=0.9, canonical_kraus=True)
-deploraizing_backend = build_depolarizing_backend(prob=0.005)
+#backend = get_noise_backend(NOISE_MODEL)
+backend=get_noise_backend(NOISE_MODEL, prob=0.005, param_amp=0.9, excited_state_population=0, param_phase=0.9, canonical_kraus=True)
+exe=make_executor(backend,shots=4096)
 
 ideal_ev = 1.0
-amplitude_executor = executor(ghz_circ, amplitude_backend)
-phase_executor = executor(ghz_circ, phase_backend)
-depolarizing_executor = executor(ghz_circ, deploraizing_backend)
+noisy_ev=exe(ghz_circ)
+print("ideal EV:", ideal_ev)
+print(f"{NOISE_MODEL} EV:", noisy_ev)
 
-print("Ideal EV:", ideal_ev)
-print("Amplitude damping noisy EV:", amplitude_executor)
-print("Phase damping noisy EV:", phase_executor)
-print("Depolarizing noisy EV:", depolarizing_executor)
+exp_results = batch_execute(zne_batch_test, ghz_circ, exe)
+for k in np.arange(1, 7):
+    print("Experiment", k, "Mitigated Expectation Value:", exp_results[k - 1])
+
+
