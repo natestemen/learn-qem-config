@@ -11,8 +11,8 @@ from qiskit import QuantumCircuit, transpile
 from noise_model_backends import get_noise_backend
 from circuits import get_experiment
 
-NOISE_MODEL="depolarizing"                   #{depolarizing, amplitude_damping, phase_damping, readout, thermal}
-CIRCUIT="rotated_rb_circuits"            #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits}
+NOISE_MODEL="depolarizing"                   #{depolarizing, amplitude_damping, phase_damping, readout, thermal, general_zne}
+CIRCUIT="rotated_rb_circuits"            #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits, random_clifford_t}
 
 
 # Load Schema:

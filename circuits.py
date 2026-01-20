@@ -1,7 +1,7 @@
 import networkx as nx
 import numpy as np
 from qiskit.quantum_info import Statevector
-from mitiq.benchmarks import generate_mirror_circuit, generate_ghz_circuit, generate_rb_circuits, generate_rotated_rb_circuits
+from mitiq.benchmarks import generate_mirror_circuit, generate_ghz_circuit, generate_rb_circuits, generate_rotated_rb_circuits, generate_random_clifford_t_circuit
 
 def _build_ghz(num_qubits=3, **args):
 
@@ -87,11 +87,33 @@ def _build_rotated_rb_circuits(n_qubits=1, num_cliffords=25, theta=np.pi/2, seed
 
     return qc, verify_func, ideal_result
 
+def _build_random_clifford_t(num_qubits=3, num_oneq_cliffords=5, num_twoq_cliffords=2, num_t_gates=2, seed=None, return_type="qiskit", **args):
+
+    qc = generate_random_clifford_t_circuit(num_qubits=num_qubits, num_oneq_cliffords=num_oneq_cliffords, num_twoq_cliffords=num_twoq_cliffords, num_t_gates=num_t_gates, seed=seed, return_type=return_type)
+
+    # Metric: Percentage of measurements of the dominant bitstring
+
+    # Free-noise result: probability of measuring the dominant bitstring in the ideal circuit
+    state = Statevector.from_instruction(qc)
+    probs = np.abs(state.data)**2
+    ideal_idx = np.argmax(probs)
+    ideal_result = probs[ideal_idx]
+
+    # Verifying function to compute the metric
+    def verify_func(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        target = format(ideal_idx, f'0{num_qubits}b')
+        return counts.get(target, 0) / total_shots
+
+    return qc, verify_func, ideal_result
+
 CIRCUIT_MAP = {
     "ghz": _build_ghz,
     "mirror_circuits": _build_mirror_circuits,
     "rb_circuits": _build_rb_circuits,
-    "rotated_rb_circuits": _build_rotated_rb_circuits
+    "rotated_rb_circuits": _build_rotated_rb_circuits,
+    "random_clifford_t": _build_random_clifford_t
 }
 
 def get_experiment(name, **args):
