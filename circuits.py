@@ -14,7 +14,7 @@ def _build_ghz(num_qubits=7, **args):
     ideal_result=1.0
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_ghz_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         s0 = "0" * num_qubits
@@ -22,7 +22,7 @@ def _build_ghz(num_qubits=7, **args):
         correct = counts.get(s0, 0) + counts.get(s1, 0)
         return correct / total_shots
     
-    return qc, verify_func, ideal_result 
+    return qc, compute_ghz_expval, ideal_result 
 
 def _build_mirror_circuits(nlayers=5, two_qubit_gate_prob=1.0, connectivity_graph=None, two_qubit_gate_name='CNOT', seed=None, return_type="qiskit",**args):
     
@@ -40,13 +40,13 @@ def _build_mirror_circuits(nlayers=5, two_qubit_gate_prob=1.0, connectivity_grap
     ideal_result=1.0
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_mirror_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         target = "".join(str(x) for x in correct_bitstring[::-1])
         return counts.get(target, 0) / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_mirror_expval, ideal_result
 
 def _build_rb_circuits(n_qubits=1, num_cliffords=25, seed=None, return_type="qiskit", **args):
     
@@ -59,13 +59,13 @@ def _build_rb_circuits(n_qubits=1, num_cliffords=25, seed=None, return_type="qis
     ideal_result=1.0
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_rb_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         target = "0" * n_qubits
         return counts.get(target, 0) / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_rb_expval, ideal_result
 
 def _build_rotated_rb_circuits(n_qubits=1, num_cliffords=25, theta=np.pi/2, seed=None, return_type="qiskit", **args):
 
@@ -80,13 +80,13 @@ def _build_rotated_rb_circuits(n_qubits=1, num_cliffords=25, theta=np.pi/2, seed
     ideal_result = np.abs(state.data[0])**2
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_rotated_rb_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0 
         target = "0" * n_qubits  
         return counts.get(target, 0) / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_rotated_rb_expval, ideal_result
 
 def _build_random_clifford_t(num_qubits=3, num_oneq_cliffords=5, num_twoq_cliffords=2, num_t_gates=2, seed=None, return_type="qiskit", **args):
 
@@ -101,13 +101,13 @@ def _build_random_clifford_t(num_qubits=3, num_oneq_cliffords=5, num_twoq_cliffo
     ideal_result = probs[ideal_idx]
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_random_clifford_t_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         target = format(ideal_idx, f'0{num_qubits}b')
         return counts.get(target, 0) / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_random_clifford_t_expval, ideal_result
 
 def _build_w_state(num_qubits=6, return_type="qiskit", **args):
 
@@ -126,7 +126,7 @@ def _build_w_state(num_qubits=6, return_type="qiskit", **args):
     ideal_result = 1.0
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_w_state_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         
@@ -138,7 +138,7 @@ def _build_w_state(num_qubits=6, return_type="qiskit", **args):
                 
         return correct_counts / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_w_state_expval, ideal_result
 
 def _build_qpe(num_qubits=3, return_type="qiskit", **args):
     
@@ -155,13 +155,13 @@ def _build_qpe(num_qubits=3, return_type="qiskit", **args):
     target_bitstring = format(ideal_idx, f'0{n_total}b')
 
     # Verifying function to compute the metric
-    def verify_func(counts):
+    def compute_qpe_expval(counts):
         total_shots = sum(counts.values())
         if total_shots == 0: return 0.0
         # Check frequency of the target bitstring found in the ideal simulation
         return counts.get(target_bitstring, 0) / total_shots
 
-    return qc, verify_func, ideal_result
+    return qc, compute_qpe_expval, ideal_result
 
 CIRCUIT_MAP = {
     "ghz": _build_ghz,
