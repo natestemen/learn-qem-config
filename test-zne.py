@@ -12,7 +12,7 @@ from noise_model_backends import get_noise_backend
 from circuits import get_experiment
 
 NOISE_MODEL="depolarizing"                   #{depolarizing, amplitude_damping, phase_damping, readout, thermal, general_zne}
-CIRCUIT="qpe"                                  #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits, random_clifford_t, w_state, qpe}
+CIRCUIT="mirror_circuits"                                  #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits, random_clifford_t, w_state, qpe}
 
 
 # Load Schema:
@@ -29,7 +29,8 @@ zne_batch_test = {
         [1, 2, 3],
         [2, 4, 6],
     ],  # Noise scaling values
-    "noise_scaling_method": ["global"],  # Folding method
+    #"noise_scaling_method": ["global"],  # Folding method
+    "noise_scaling_method": ["global", "local_all", "local_random"],
     "extrapolation": ["polynomial", "linear"],  # Extrapolation method
 }
 
@@ -184,7 +185,22 @@ print(f"{NOISE_MODEL} EV:", noisy_ev)
 
 
 exp_results = batch_execute(zne_batch_test, circ, exe)
-for k in np.arange(1, 7):
+for k in range(len(exp_results)):
     print("Experiment", k, "Mitigated Expectation Value:", exp_results[k - 1])
+
+
+configs = make_experiment_list(zne_batch_test)
+
+errors = np.abs(np.array(exp_results) - ideal_ev)
+best_idx = np.argmin(errors)
+
+
+print(f"BEST RESULT: Experiment #{best_idx + 1}")
+print(f"Ideal Value:     {ideal_ev}")
+print(f"Mitigated Value: {exp_results[best_idx]}")
+print(f"Absolute Error:  {errors[best_idx]}")
+print("WINNING CONFIGURATION:")
+print(json.dumps(configs[best_idx], indent=4))
+
 
 
