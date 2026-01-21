@@ -1,9 +1,10 @@
 import networkx as nx
 import numpy as np
 from qiskit.quantum_info import Statevector
-from mitiq.benchmarks import generate_mirror_circuit, generate_ghz_circuit, generate_rb_circuits, generate_rotated_rb_circuits, generate_random_clifford_t_circuit
+from mitiq.benchmarks import generate_mirror_circuit, generate_ghz_circuit, generate_rb_circuits, generate_rotated_rb_circuits, generate_random_clifford_t_circuit, generate_w_circuit, generate_qpe_circuit
+from qiskit import QuantumCircuit
 
-def _build_ghz(num_qubits=3, **args):
+def _build_ghz(num_qubits=7, **args):
 
     qc = generate_ghz_circuit(n_qubits=num_qubits, return_type="qiskit")
 
@@ -108,12 +109,68 @@ def _build_random_clifford_t(num_qubits=3, num_oneq_cliffords=5, num_twoq_cliffo
 
     return qc, verify_func, ideal_result
 
+def _build_w_state(num_qubits=6, return_type="qiskit", **args):
+
+    # Generate the ansatz from Mitiq
+    # The W-state algorithm transforms |10...0> into the W-state
+    mitiq_qc = generate_w_circuit(n_qubits=num_qubits, return_type=return_type)
+
+    # Initialize the circuit state to |10...0>
+    qc = QuantumCircuit(num_qubits)
+    qc.x(0)
+    qc.compose(mitiq_qc, inplace=True)
+
+    # Metric: Percentage of states with Hamming weight equal to 1 
+
+    # Free-noise result: 1.0 (measuring always a state with a single '1')
+    ideal_result = 1.0
+
+    # Verifying function to compute the metric
+    def verify_func(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        
+        correct_counts = 0
+        for bitstring, count in counts.items():
+            # Check if the bitstring contains exactly one '1'
+            if bitstring.count('1') == 1:
+                correct_counts += count
+                
+        return correct_counts / total_shots
+
+    return qc, verify_func, ideal_result
+
+def _build_qpe(num_qubits=3, return_type="qiskit", **args):
+    
+    qc = generate_qpe_circuit(evalue_reg=num_qubits, return_type=return_type)
+
+    # Metric: Probability of measuring the dominant bitstring (the estimated phase)
+
+    # Free-noise result: Determine the ideal peak probability via simulation
+    state = Statevector.from_instruction(qc)
+    probs = np.abs(state.data)**2
+    ideal_idx = np.argmax(probs)
+    ideal_result = probs[ideal_idx]
+    n_total = qc.num_qubits  # it returns one more qubit for the eigenstate
+    target_bitstring = format(ideal_idx, f'0{n_total}b')
+
+    # Verifying function to compute the metric
+    def verify_func(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        # Check frequency of the target bitstring found in the ideal simulation
+        return counts.get(target_bitstring, 0) / total_shots
+
+    return qc, verify_func, ideal_result
+
 CIRCUIT_MAP = {
     "ghz": _build_ghz,
     "mirror_circuits": _build_mirror_circuits,
     "rb_circuits": _build_rb_circuits,
     "rotated_rb_circuits": _build_rotated_rb_circuits,
-    "random_clifford_t": _build_random_clifford_t
+    "random_clifford_t": _build_random_clifford_t,
+    "w_state": _build_w_state,
+    "qpe":_build_qpe
 }
 
 def get_experiment(name, **args):

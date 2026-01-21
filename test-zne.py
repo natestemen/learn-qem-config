@@ -12,7 +12,7 @@ from noise_model_backends import get_noise_backend
 from circuits import get_experiment
 
 NOISE_MODEL="depolarizing"                   #{depolarizing, amplitude_damping, phase_damping, readout, thermal, general_zne}
-CIRCUIT="rotated_rb_circuits"            #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits, random_clifford_t}
+CIRCUIT="qpe"                                  #{ghz, mirror_circuits, rb_circuits, rotated_rb_circuits, random_clifford_t, w_state, qpe}
 
 
 # Load Schema:
