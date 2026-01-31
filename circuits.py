@@ -1,0 +1,224 @@
+import networkx as nx
+import numpy as np
+from qiskit.quantum_info import Statevector
+from mitiq.benchmarks import generate_mirror_circuit, generate_ghz_circuit, generate_rb_circuits, generate_rotated_rb_circuits, generate_random_clifford_t_circuit, generate_w_circuit, generate_qpe_circuit
+from qiskit import QuantumCircuit
+
+def _build_ghz(num_qubits=7, **args):
+
+    qc = generate_ghz_circuit(n_qubits=num_qubits, return_type="qiskit")
+
+    # Metric: percentage of |0^n> or |1^n> measurements 
+
+    # Free-noise result: 1.0 (measuring always |0^n> or |1^n>)
+    ideal_result=1.0
+
+    # Verifying function to compute the metric
+    def compute_ghz_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        s0 = "0" * num_qubits
+        s1 = "1" * num_qubits
+        correct = counts.get(s0, 0) + counts.get(s1, 0)
+        return correct / total_shots
+    
+    return qc, compute_ghz_expval, ideal_result 
+
+def _build_mirror_circuits(nlayers=5, two_qubit_gate_prob=1.0, connectivity_graph=None, two_qubit_gate_name='CNOT', seed=None, return_type="qiskit",**args):
+    
+    # Default topology 
+    topology = connectivity_graph
+    if topology is None:
+        n = 7
+        topology = nx.complete_graph(n)
+    
+    qc, correct_bitstring = generate_mirror_circuit(nlayers=nlayers,two_qubit_gate_prob=two_qubit_gate_prob,connectivity_graph=topology,two_qubit_gate_name=two_qubit_gate_name,seed=seed,return_type=return_type )
+    
+    # Metric: percentage of intial state measurements 
+
+    # Free-noise result: 1.0 (measuring always the initial state)
+    ideal_result=1.0
+
+    # Verifying function to compute the metric
+    def compute_mirror_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        target = "".join(str(x) for x in correct_bitstring[::-1])
+        return counts.get(target, 0) / total_shots
+
+    return qc, compute_mirror_expval, ideal_result
+
+def _build_rb_circuits(n_qubits=1, num_cliffords=25, seed=None, return_type="qiskit", **args):
+    
+    qc_list = generate_rb_circuits(n_qubits=n_qubits, num_cliffords=num_cliffords, seed=seed, return_type=return_type)
+    qc=qc_list[0]
+
+    # Metric: percentage of |0^n> measurements 
+
+    # Free-noise result: 1.0 (measuring always |0^n>)
+    ideal_result=1.0
+
+    # Verifying function to compute the metric
+    def compute_rb_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        target = "0" * n_qubits
+        return counts.get(target, 0) / total_shots
+
+    return qc, compute_rb_expval, ideal_result
+
+def _build_rotated_rb_circuits(n_qubits=1, num_cliffords=25, theta=np.pi/2, seed=None, return_type="qiskit", **args):
+
+    # Generate the list of circuits
+    qc_list = generate_rotated_rb_circuits(n_qubits=n_qubits, num_cliffords=num_cliffords, theta=theta, trials=1, return_type=return_type, seed=seed)
+    qc = qc_list[0]
+
+    # Metric: Probability of measuring the ground state |0^n> 
+    
+    # Free-noise result: probability of measuring the ground state |0^n> in the ideal circuit 
+    state = Statevector.from_instruction(qc)
+    ideal_result = np.abs(state.data[0])**2
+
+    # Verifying function to compute the metric
+    def compute_rotated_rb_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0 
+        target = "0" * n_qubits  
+        return counts.get(target, 0) / total_shots
+
+    return qc, compute_rotated_rb_expval, ideal_result
+
+def _build_random_clifford_t(num_qubits=3, num_oneq_cliffords=5, num_twoq_cliffords=2, num_t_gates=2, seed=None, return_type="qiskit", **args):
+
+    qc = generate_random_clifford_t_circuit(num_qubits=num_qubits, num_oneq_cliffords=num_oneq_cliffords, num_twoq_cliffords=num_twoq_cliffords, num_t_gates=num_t_gates, seed=seed, return_type=return_type)
+
+    # Metric: Percentage of measurements of the dominant bitstring
+
+    # Free-noise result: probability of measuring the dominant bitstring in the ideal circuit
+    state = Statevector.from_instruction(qc)
+    probs = np.abs(state.data)**2
+    ideal_idx = np.argmax(probs)
+    ideal_result = probs[ideal_idx]
+
+    # Verifying function to compute the metric
+    def compute_random_clifford_t_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        target = format(ideal_idx, f'0{num_qubits}b')
+        return counts.get(target, 0) / total_shots
+
+    return qc, compute_random_clifford_t_expval, ideal_result
+
+def _build_w_state(num_qubits=6, return_type="qiskit", **args):
+
+    # Generate the ansatz from Mitiq
+    # The W-state algorithm transforms |10...0> into the W-state
+    mitiq_qc = generate_w_circuit(n_qubits=num_qubits, return_type=return_type)
+
+    # Initialize the circuit state to |10...0>
+    qc = QuantumCircuit(num_qubits)
+    qc.x(0)
+    qc.compose(mitiq_qc, inplace=True)
+
+    # Metric: Percentage of states with Hamming weight equal to 1 
+
+    # Free-noise result: 1.0 (measuring always a state with a single '1')
+    ideal_result = 1.0
+
+    # Verifying function to compute the metric
+    def compute_w_state_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        
+        correct_counts = 0
+        for bitstring, count in counts.items():
+            # Check if the bitstring contains exactly one '1'
+            if bitstring.count('1') == 1:
+                correct_counts += count
+                
+        return correct_counts / total_shots
+
+    return qc, compute_w_state_expval, ideal_result
+
+def _build_qpe(num_qubits=3, return_type="qiskit", **args):
+    
+    qc = generate_qpe_circuit(evalue_reg=num_qubits, return_type=return_type)
+
+    # Metric: Probability of measuring the dominant bitstring (the estimated phase)
+
+    # Free-noise result: Determine the ideal peak probability via simulation
+    state = Statevector.from_instruction(qc)
+    probs = np.abs(state.data)**2
+    ideal_idx = np.argmax(probs)
+    ideal_result = probs[ideal_idx]
+    n_total = qc.num_qubits  # it returns one more qubit for the eigenstate
+    target_bitstring = format(ideal_idx, f'0{n_total}b')
+
+    # Verifying function to compute the metric
+    def compute_qpe_expval(counts):
+        total_shots = sum(counts.values())
+        if total_shots == 0: return 0.0
+        # Check frequency of the target bitstring found in the ideal simulation
+        return counts.get(target_bitstring, 0) / total_shots
+
+    return qc, compute_qpe_expval, ideal_result
+
+CIRCUIT_MAP = {
+    "ghz": _build_ghz,
+    "mirror_circuits": _build_mirror_circuits,
+    "rb_circuits": _build_rb_circuits,
+    "rotated_rb_circuits": _build_rotated_rb_circuits,
+    "random_clifford_t": _build_random_clifford_t,
+    "w_state": _build_w_state,
+    "qpe":_build_qpe
+}
+
+# Function to simulate the circuit given by the user and return the verifying function and ideal result
+# If the target is provided, the ideal result is the probability of measuring the target, 
+# if not is 1.0 (measuring any state with some prob in the ideal simulation)
+def _build_from_custom(user_qc, target=None, **args):
+  
+    # Ideal simulation
+    qc_sim = user_qc.remove_final_measurements(inplace=False)
+    state = Statevector.from_instruction(qc_sim)
+    probs = state.probabilities()
+    num_qubits = user_qc.num_qubits
+
+    # User gives a specific result
+    if target is not None:
+        target_idx = int(target, 2)
+        ideal_result = probs[target_idx]       
+        def compute_custom_expval(counts):
+            total_shots = sum(counts.values())
+            if total_shots == 0: return 0.0
+            return counts.get(target, 0) / total_shots
+            
+        return user_qc, compute_custom_expval, ideal_result
+
+    # User accepts any possible measurement
+    else:
+        # Ideally, measurements with prob>0 will count but a thresold is defined to prevent small floating-point inaccuracies
+        prob = 1e-10
+        valid_indices = np.where(probs > prob)[0]
+        ideal_result = np.sum(probs[valid_indices])#(~1.0)
+        
+        target_bitstrings = {format(idx, f'0{num_qubits}b') for idx in valid_indices}
+
+        def compute_custom_expval(counts):
+            total_shots = sum(counts.values())
+            if total_shots == 0: return 0.0
+            correct_counts = sum(counts.get(t, 0) for t in target_bitstrings)
+            return correct_counts / total_shots
+
+        return user_qc, compute_custom_expval, ideal_result
+    
+def get_circuit(circuit, **args):
+
+    # Custom circuit
+    if isinstance(circuit, QuantumCircuit):
+        return _build_from_custom(circuit, **args)
+    
+    # Predefined circuit
+    if isinstance(circuit, str):
+        if circuit in CIRCUIT_MAP:
+            return CIRCUIT_MAP[circuit](**args)
