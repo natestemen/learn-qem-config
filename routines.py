@@ -1,12 +1,13 @@
 import json
 import numpy as np
 import re
+import pandas as pd
 from experiment import make_experiment_list, batch_execute
 
 DEFAULT_METHODS = ["global", "local_random", "local_all", "identity_scaling"]
 DEFAULT_EXTRAPS = ["linear", "richardson", "polynomial", "exponential", "poly-exp", "adaptive-exp"]
 DEFAULT_SEARCH_FACTORS = [[1, 2, 3], [1, 3, 5], [1, 5, 9]]
-BASE_FACTORS = [1, 3, 5, 7]
+BASE_FACTORS = [1, 3, 5]
 
 def _print_result(best_config, ideal_result, best_result, error):
 
@@ -28,8 +29,37 @@ def _get_default_batch():
         "extrapolation": DEFAULT_EXTRAPS
     }
 
+def _save_top_results_csv(results_list, configs_list, errors_list, ideal_result, filename="top_results"):
 
-def brute_force_search(circ, exe, ideal_result, zne_batch_test=None):
+    if not filename.endswith(".csv"):
+        filename += ".csv"
+
+    data = []
+    for i in range(len(results_list)):
+        if not np.isnan(errors_list[i]):
+            row = {
+                "Method": configs_list[i]["noise_scaling_method"],
+                "Extrapolation": configs_list[i]["extrapolation"],
+                "Scale Factors": str(configs_list[i]["noise_scaling_factors"]),
+                "Ideal": float(ideal_result),
+                "Result": float(results_list[i]),
+                "Error": float(errors_list[i])
+            }
+            data.append(row)
+    
+    if not data:
+        return
+
+    # Top 5 results are saved
+    df = pd.DataFrame(data)    
+    df_sorted = df.sort_values(by="Error", ascending=True)
+    top_n = df_sorted.head(5)
+
+    top_n.to_csv(filename, index=False)
+    print(f"\nFile saved: {filename}")
+
+
+def brute_force_search(circ, exe, ideal_result, zne_batch_test=None, results_file=None):
 
     # Set the default search space if not provided
     if zne_batch_test is None:
@@ -48,9 +78,11 @@ def brute_force_search(circ, exe, ideal_result, zne_batch_test=None):
     best_idx = np.nanargmin(errors)
 
     _print_result(best_config=configs[best_idx], ideal_result=ideal_result, best_result=exp_results[best_idx], error=errors[best_idx])
+    if results_file is not None:
+        _save_top_results_csv(exp_results, configs, errors, ideal_result, filename=results_file)
 
 
-def light_brute_force_search(circ, exe, ideal_result, zne_batch_test=None, max_iter=10, printing=True):
+def light_brute_force_search(circ, exe, ideal_result, zne_batch_test=None, max_iter=10, results_file=None, printing=True):
 
     # Set the default search space if not provided
     if zne_batch_test is None:
@@ -68,6 +100,12 @@ def light_brute_force_search(circ, exe, ideal_result, zne_batch_test=None, max_i
     max_reached = False
     
     best_result_value = np.nan
+    current_best_error = np.inf
+
+    # History of results
+    hist_results = []
+    hist_configs = []
+    hist_errors = []
 
     while not converged and not max_reached:
         iter += 1
@@ -95,15 +133,24 @@ def light_brute_force_search(circ, exe, ideal_result, zne_batch_test=None, max_i
             # Convert to numpy array to handle NaNs correctly
             results_array = np.array(results, dtype=float)
             errors = np.abs(results_array - ideal_result)
+
+            hist_results.extend(results)
+            hist_configs.extend(make_experiment_list(batch_dict))
+            hist_errors.extend(errors)
+
             # If all experiments in this batch failed (all are NaN), skip update
             if np.all(np.isnan(errors)):
                 continue
 
-            best_idx = np.nanargmin(errors)
+            best_idx_in_batch = np.nanargmin(errors)
+            best_error_in_batch = errors[best_idx_in_batch]
             
-            best_value_for_param = zne_batch_test[param_name][best_idx]
-            current_config[param_name] = best_value_for_param
-            best_result_value = results[best_idx]
+            # Only update if the error has decreased
+            if best_error_in_batch < current_best_error:
+                current_best_error = best_error_in_batch
+                best_value_for_param = zne_batch_test[param_name][best_idx_in_batch]
+                current_config[param_name] = best_value_for_param
+                best_result_value = results[best_idx_in_batch]
 
         # Check if the configuration has changed
         if json.dumps(previous_config, sort_keys=True) == json.dumps(current_config, sort_keys=True):
@@ -117,19 +164,20 @@ def light_brute_force_search(circ, exe, ideal_result, zne_batch_test=None, max_i
     if not np.isnan(best_result_value):
         final_error = abs(best_result_value - ideal_result)
 
-    # Only print results when it is used as an independet routine
+    # Only print results when it is used as an independent routine
     if printing:
         if max_reached:
             print("Max number of iterations reached")
         if np.isnan(best_result_value):
             print("\nLight Brute Force failed: No valid configuration found.")
         else:
+            if results_file is not None:
+                _save_top_results_csv(hist_results, hist_configs, hist_errors, ideal_result, filename=results_file)
             _print_result(best_config=current_config, ideal_result=ideal_result, best_result=best_result_value, error=final_error)
-            
-    return current_config, best_result_value, final_error
+    else: 
+        return current_config, best_result_value, final_error, hist_results, hist_configs, hist_errors
 
-
-def adaptive_search(circ, exe, ideal_result, zne_batch_test=None, tolerance=1e-3, max_factors=10):
+def adaptive_search(circ, exe, ideal_result, zne_batch_test=None, tolerance=1e-4, max_factors=10, results_file=None):
 
     stop_reason=0
 
@@ -149,17 +197,15 @@ def adaptive_search(circ, exe, ideal_result, zne_batch_test=None, tolerance=1e-3
     }
 
     # Find best methods using light_brute_force 
-    best_config, best_val, best_err = light_brute_force_search( circ, exe, ideal_result, initial_batch, max_iter=10, printing=False)
-
+    best_config, best_val, best_err, hist_results, hist_configs, hist_errors = light_brute_force_search(circ, exe, ideal_result, initial_batch, max_iter=10, printing=False)
     # Adaptive expansion of scale factors
-
     current_factors = list(best_config["noise_scaling_factors"])
     current_best_error = best_err
     current_best_result = best_val
     
-    next_factor = 9
-    
     while len(current_factors) < max_factors:
+
+        next_factor = current_factors[-1] + 2
         
         # Add one scale factor
         new_factors_list = current_factors + [next_factor]
@@ -178,6 +224,11 @@ def adaptive_search(circ, exe, ideal_result, zne_batch_test=None, tolerance=1e-3
         # Check if there is any reasonable improvement
         new_err = abs(new_val - ideal_result)
         improvement = current_best_error - new_err
+
+        hist_results.append(new_val)
+        hist_configs.append(make_experiment_list(test_batch)[0])
+        hist_errors.append(new_err)
+
         if new_err > current_best_error:
             stop_reason=1
             break 
@@ -201,3 +252,5 @@ def adaptive_search(circ, exe, ideal_result, zne_batch_test=None, tolerance=1e-3
         print("Adaptive search: Maximum limit of scale factors reached ")
 
     _print_result(best_config, ideal_result, current_best_result, current_best_error)
+    if results_file is not None:
+        _save_top_results_csv(hist_results, hist_configs, hist_errors, ideal_result, filename=results_file)

@@ -173,6 +173,52 @@ CIRCUIT_MAP = {
     "qpe":_build_qpe
 }
 
-def get_experiment(name, **args):
-    if name in CIRCUIT_MAP:
-        return CIRCUIT_MAP[name](**args)
+# Function to simulate the circuit given by the user and return the verifying function and ideal result
+# If the target is provided, the ideal result is the probability of measuring the target, 
+# if not is 1.0 (measuring any state with some prob in the ideal simulation)
+def _build_from_custom(user_qc, target=None, **args):
+  
+    # Ideal simulation
+    qc_sim = user_qc.remove_final_measurements(inplace=False)
+    state = Statevector.from_instruction(qc_sim)
+    probs = state.probabilities()
+    num_qubits = user_qc.num_qubits
+
+    # User gives a specific result
+    if target is not None:
+        target_idx = int(target, 2)
+        ideal_result = probs[target_idx]       
+        def compute_custom_expval(counts):
+            total_shots = sum(counts.values())
+            if total_shots == 0: return 0.0
+            return counts.get(target, 0) / total_shots
+            
+        return user_qc, compute_custom_expval, ideal_result
+
+    # User accepts any possible measurement
+    else:
+        # Ideally, measurements with prob>0 will count but a thresold is defined to prevent small floating-point inaccuracies
+        prob = 1e-10
+        valid_indices = np.where(probs > prob)[0]
+        ideal_result = np.sum(probs[valid_indices])#(~1.0)
+        
+        target_bitstrings = {format(idx, f'0{num_qubits}b') for idx in valid_indices}
+
+        def compute_custom_expval(counts):
+            total_shots = sum(counts.values())
+            if total_shots == 0: return 0.0
+            correct_counts = sum(counts.get(t, 0) for t in target_bitstrings)
+            return correct_counts / total_shots
+
+        return user_qc, compute_custom_expval, ideal_result
+    
+def get_circuit(circuit, **args):
+
+    # Custom circuit
+    if isinstance(circuit, QuantumCircuit):
+        return _build_from_custom(circuit, **args)
+    
+    # Predefined circuit
+    if isinstance(circuit, str):
+        if circuit in CIRCUIT_MAP:
+            return CIRCUIT_MAP[circuit](**args)
